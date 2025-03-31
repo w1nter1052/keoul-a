@@ -1,59 +1,49 @@
 import streamlit as st
-import requests
 import replicate
+import requests
 import os
 
-# Replicate API Key 환경변수 불러오기
+# Replicate API 토큰 (Secrets 또는 로컬 환경에서 설정)
 REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
-replicate.Client(api_token=REPLICATE_API_TOKEN)
+replicate_client = replicate.Client(api_token=REPLICATE_API_TOKEN)
 
-# imgbb API Key 직접 입력
-IMGBB_API_KEY = "3278007c7082669b8cfe8c827c562f6c"
+# 페이지 설정
+st.set_page_config(page_title="AI 옷 입히기", page_icon="🧥")
+st.title("🧥 AI로 옷 입혀보기")
 
-st.set_page_config(page_title="👗 거울아, AI로 옷 입혀줘", page_icon="🪞")
-st.title("👗 거울아, AI로 옷 입혀줘")
+# 이미지 업로더
+st.subheader("👤 사람 이미지 업로드")
+person_img = st.file_uploader("사람 전신 이미지 (JPG, PNG)", type=["jpg", "jpeg", "png"], key="person")
 
-# 파일 업로드
-st.subheader("고객 전신 사진 업로드")
-person_image = st.file_uploader("전신 사진을 업로드해주세요", type=["jpg", "jpeg", "png"], key="person")
+st.subheader("👗 옷 이미지 업로드")
+cloth_img = st.file_uploader("입힐 옷 이미지 (JPG, PNG)", type=["jpg", "jpeg", "png"], key="cloth")
 
-st.subheader("입혀볼 옷 사진 업로드")
-garment_image = st.file_uploader("입힐 옷 이미지를 업로드해주세요", type=["jpg", "jpeg", "png"], key="garment")
+# CDN 업로드 함수
+def upload_to_replicate_cdn(file):
+    upload_url = "https://dreambooth-api-experimental.replicate.delivery/upload"
+    files = {"file": (file.name, file, file.type)}
+    response = requests.post(upload_url, files=files)
 
-# imgbb에 이미지 업로드하는 함수
-def upload_to_imgbb(file, key):
-    upload_url = "https://api.imgbb.com/1/upload"
-    files = {"image": file.getvalue()}
-    params = {"key": key}
-    response = requests.post(upload_url, params=params, files=files)
-    if response.status_code == 200:
-        return response.json()['data']['url']
-    else:
-        st.error("imgbb 업로드 실패")
-        st.code(response.text, language='json')
+    if response.status_code != 200:
+        st.error(f"이미지 업로드 실패 (상태코드 {response.status_code})")
         return None
 
-# AI 합성 실행
-if person_image and garment_image:
-    st.info("⏳ AI가 옷을 입히는 중입니다. 잠시만 기다려주세요…")
+    return response.json()["url"]
 
-    # 이미지 업로드 → URL 획득
-    person_url = upload_to_imgbb(person_image, IMGBB_API_KEY)
-    garment_url = upload_to_imgbb(garment_image, IMGBB_API_KEY)
+# 실행 버튼
+if person_img and cloth_img:
+    st.info("AI가 이미지를 처리 중입니다... 잠시만 기다려 주세요!")
 
-    if person_url and garment_url:
-        # AI 호출
-        output = replicate.run(
-            "cuuupid/idm-vton:latest",
+    person_url = upload_to_replicate_cdn(person_img)
+    cloth_url = upload_to_replicate_cdn(cloth_img)
+
+    if person_url and cloth_url:
+        output = replicate_client.run(
+            "wolverinn/ecommerce-virtual-try-on",
             input={
-                "human_img": person_url,
-                "garment_img": garment_url,
-                "garment_type": "upper_body"
+                "human_image": person_url,
+                "cloth_image": cloth_url
             }
         )
-
-        # 결과 이미지 출력
-        st.success("✅ 옷을 입힌 결과입니다!")
-        st.image(output, caption="AI가 합성한 옷 입은 모습", use_column_width=True)
-else:
-    st.warning("전신 사진과 옷 사진을 모두 업로드해주세요.")
+        st.success("AI 옷 입히기 완료!")
+        st.image(output, caption="입혀진 결과", use_column_width=True)
