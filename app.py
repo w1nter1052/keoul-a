@@ -1,67 +1,72 @@
-import streamlit as st
-import requests
-from PIL import Image
 import io
-import os
 import replicate
 
-# ⛳ 환경 변수로부터 Replicate API 토큰 불러오기
-REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
-client = replicate.Client(api_token=REPLICATE_API_TOKEN)
-
-# CDN 업로드 함수 (이미지 → URL 변환)
-def upload_to_replicate_cdn(image_file):
-    upload_url = "https://dreambooth-api-experimental.replicate.com/v1/upload"
-    headers = {"Authorization": f"Token {REPLICATE_API_TOKEN}"}
-
-    file_bytes = image_file.read()  # ✔ 파일 바이트로 읽기
-    files = {"file": (image_file.name, file_bytes)}
-
-    response = requests.post(upload_url, headers=headers, files=files)
-
-    if response.status_code == 200:
-        return response.json()["url"]
-    else:
-        raise Exception(f"CDN 업로드 실패 (상태 코드: {response.status_code})\n{response.text}")
-
-
-# 🖼️ Streamlit 인터페이스
+# 📌 Streamlit 페이지 제목
+st.set_page_config(page_title="거울아, AI로 옷 입혀줘 👗")
 st.title("👗 거울아, AI로 옷 입혀줘")
 
-person_image = st.file_uploader("고객 전신 사진 업로드", type=["jpg", "jpeg", "png"], key="person")
-clothes_image = st.file_uploader("입혀볼 옷 사진 업로드", type=["jpg", "jpeg", "png"], key="clothes")
+# 📌 파일 업로드 받기
+person_image = st.file_uploader("고객 전신 사진 업로드", type=["jpg", "jpeg", "png"])
+clothes_image = st.file_uploader("입혀볼 옷 사진 업로드", type=["jpg", "jpeg", "png"])
 
+# ✅ Replicate CDN에 이미지 업로드하는 함수
+def upload_to_replicate_cdn(image_file):
+    upload_init_url = "https://dreambooth-api-experimental.replicate.com/v1/upload"
+
+    headers = {
+        "Authorization": f"Token {os.getenv('REPLICATE_API_TOKEN')}",
+        "Content-Type": "application/json",
+    }
+
+    init_response = requests.post(
+        upload_init_url,
+        headers=headers,
+        json={"filename": image_file.name}
+    )
+
+    if init_response.status_code != 200:
+        st.error(f"CDN 업로드 실패 (상태 코드: {init_response.status_code})\n\n{init_response.text}")
+        return None
+
+    upload_data = init_response.json()
+    upload_url = upload_data["upload_url"]
+    final_url = upload_data["final_url"]
+
+    # 이미지 실제 업로드 (PUT)
+    put_response = requests.put(
+        upload_url,
+        data=image_file.getvalue(),
+        headers={"Content-Type": "application/octet-stream"}
+    )
+
+    if put_response.status_code != 200:
+        st.error(f"이미지 전송 실패 (상태 코드: {put_response.status_code})")
+        return None
+
+    return final_url
+
+# ✅ 실제 실행
 if person_image and clothes_image:
     st.info("AI가 옷을 입히는 중입니다. 잠시만 기다려주세요...")
 
-    try:
-        # ⬆️ 이미지 업로드 → CDN URL
-        person_url = upload_to_replicate_cdn(person_image)
-        clothes_image.seek(0)  # 파일 다시 읽기 위해 포인터 초기화
-        clothes_url = upload_to_replicate_cdn(clothes_image)
+    person_url = upload_to_replicate_cdn(person_image)
+    clothes_url = upload_to_replicate_cdn(clothes_image)
 
-        # ▶️ 무료 모델 실행: cuuupid/idm-vton
-        model_version = "cuuupid/idm-vton:0513734a452173b8173e907e3a59d19a36266e55b48528559432bd21c7d7e985"
-        output = client.run(
-            model_version,
-            input={
-                "human_img": person_url,
-                "garment_img": clothes_url,
-                "garment_des": "test cloth"
-            }
-        )
+    if person_url and clothes_url:
+        try:
+            # Replicate 실행
+            output = replicate.run(
+                "cuuupid/idm-vton",
+                input={
+                    "human_img": person_url,
+                    "garment_img": clothes_url,
+                    "garment_des": "any clothing"
+                }
+            )
 
-        # 결과 출력
-        st.subheader("👚 합성 결과")
-        st.image(output, caption="AI가 옷을 입힌 모습", use_column_width=True)
-
-        # 다운로드 버튼
-        img_response = requests.get(output)
-        if img_response.status_code == 200:
-            st.download_button("📥 결과 다운로드", data=img_response.content, file_name="ai_tryon_result.jpg", mime="image/jpeg")
-
-    except Exception as e:
-        st.error(f"에러 발생: {e}")
-
+            st.image(output, caption="👗 합성된 이미지", use_column_width=True)
+            st.success("완료! 아래 이미지를 확인하세요.")
+        except Exception as e:
+            st.error(f"AI 처리 중 오류 발생: {e}")
 else:
-    st.info("고객 전신 사진과 옷 이미지를 모두 업로드해주세요.")
+    st.warning("고객 전신 사진과 옷 이미지를 모두 업로드해주세요.")
