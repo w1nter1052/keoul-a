@@ -32,13 +32,13 @@ if person_image and clothes_image:
         clothes_b64 = to_base64(clothes_image)
 
         # ✅ 여기에 사용할 최신 Replicate 모델 주소를 정확히 넣어줘야 함
-        output = client.run(
-            "cuupid/idm-vton:27b5d9d9d8106476427cc1cf9c631dd5d9f09d39b41a4dfb3177f7b66ffefb8c",
-            input={
-                "human": person_b64,
-                "cloth": clothes_b64
-            }
-        )
+       output = client.run(
+    "cuupid/idm-vton:27b5d9d9d8106476427cc1cf9c631dd5d9f09d39b41a4dfb3177f7b66ffefb8c",
+    input={
+        "human": person_b64,
+        "cloth": clothes_b64
+    }
+)
 
         # 출력 결과 (URL 형식)
         if isinstance(output, str):
