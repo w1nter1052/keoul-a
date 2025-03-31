@@ -1,44 +1,45 @@
 import streamlit as st
+import requests
 import replicate
 import os
-from PIL import Image
-import io
 
-# 1️⃣ Replicate API 키 설정
-os.environ["REPLICATE_API_TOKEN"] = st.secrets["REPLICATE_API_TOKEN"]
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
+replicate.Client(api_token=REPLICATE_API_TOKEN)
 
-# 2️⃣ 웹페이지 설정
-st.set_page_config(page_title="AI 옷 입히기 👗")
+st.set_page_config(page_title="겨울아, AI로 옷 입혀줘", page_icon="👗")
 st.title("👗 겨울아, AI로 옷 입혀줘")
 
-# 3️⃣ 이미지 업로드
-col1, col2 = st.columns(2)
-with col1:
-    person_file = st.file_uploader("👤 사람 사진 업로드", type=["jpg", "jpeg", "png"], key="person")
-with col2:
-    clothes_file = st.file_uploader("👗 옷 사진 업로드", type=["jpg", "jpeg", "png"], key="clothes")
+st.subheader("고객 전신 사진 업로드")
+person_image = st.file_uploader("전신 사진을 업로드해주세요", type=["jpg", "jpeg", "png"], key="person")
 
-# 4️⃣ 이미지 업로드 확인 후 처리
-if person_file and clothes_file:
-    with st.spinner("AI가 옷을 입히는 중입니다..."):
+st.subheader("입혀볼 옷 사진 업로드")
+garment_image = st.file_uploader("입힐 옷 이미지를 업로드해주세요", type=["jpg", "jpeg", "png"], key="garment")
 
-        # 이미지 바이트 읽기
-        person_bytes = person_file.read()
-        clothes_bytes = clothes_file.read()
+def upload_to_replicate_cdn(file):
+    url = "https://dreambooth-api-experimental.replicate.delivery/upload"
+    files = {"file": (file.name, file, file.type)}
+    response = requests.post(url, files=files)
 
-        # 5️⃣ Replicate 실행 (무료 모델: wolverinn/ecommerce-virtual-try-on)
-        try:
-            output_url = replicate.run(
-                "wolverinn/ecommerce-virtual-try-on:b278f3c471a8e64e9856ce3cb0175e02cc202c3c7c5b75d0cf5c78f30e0b3b5b",
-                input={
-                    "human_img": person_bytes,
-                    "garment_img": clothes_bytes
-                }
-            )
+    if response.status_code != 200:
+        st.error(f"CDN 업로드 실패 (상태 코드: {response.status_code})")
+        st.code(response.text, language='html')
+        return None
+    
+    return response.json()["url"]
 
-            st.success("완성된 이미지입니다!")
-            st.image(output_url, caption="👗 입혀진 결과", use_column_width=True)
+if person_image and garment_image:
+    st.info("AI가 옷을 입히는 중입니다. 잠시만 기다려주세요…")
 
-        except Exception as e:
-            st.error("오류가 발생했습니다:")
-            st.code(str(e))
+    person_url = upload_to_replicate_cdn(person_image)
+    garment_url = upload_to_replicate_cdn(garment_image)
+
+    if person_url and garment_url:
+        output = replicate.run(
+            "cuuupid/idm-vton:latest",
+            input={
+                "human_img": person_url,
+                "garment_img": garment_url,
+                "garment_type": "upper_body"
+            }
+        )
+        st.image(output, caption="AI가 입힌 결과", use_column_width=True)
