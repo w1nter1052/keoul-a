@@ -5,7 +5,7 @@ import os
 from PIL import Image
 
 # Replicate API Token 설정
-REPLICATE_API_TOKEN = "여기에_복사한_API_토큰을_입력하세요"
+REPLICATE_API_TOKEN = "발급받은_토큰_여기에_입력"
 replicate.Client(api_token=REPLICATE_API_TOKEN)
 
 # Streamlit 페이지 설정
